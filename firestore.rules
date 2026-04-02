@@ -1,0 +1,95 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    // Collection: users
+    // Document ID: {userId}
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required, email format)
+    //   - displayName: string (required, max 50 chars)
+    //   - role: string (required, 'user' or 'admin')
+    //   - purchasedCourses: list (required, max 50 items)
+    //   - createdAt: string (required, ISO 8601)
+    //
+    // Collection: paymentProofs
+    // Document ID: {proofId}
+    // Fields:
+    //   - userId: string (required)
+    //   - userEmail: string (required, email format)
+    //   - userName: string (required, max 50 chars)
+    //   - phone: string (required, max 20 chars)
+    //   - utrId: string (required, max 50 chars)
+    //   - courseId: string (required, max 50 chars)
+    //   - status: string (required, 'pending', 'verified', 'rejected')
+    //   - submittedAt: string (required, ISO 8601)
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        ((request.auth.token.email == "businessboy616@gmail.com" && request.auth.token.email_verified == true) ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    // Domain Validators
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'purchasedCourses', 'createdAt']) &&
+             data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'purchasedCourses', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.email is string && isValidEmail(data.email) &&
+             data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 50 &&
+             data.role in ['user', 'admin'] &&
+             data.purchasedCourses is list && data.purchasedCourses.size() <= 50 &&
+             isValidDateString(data.createdAt);
+    }
+
+    function isValidPaymentProof(data) {
+      return data.keys().hasAll(['userId', 'userEmail', 'utrId', 'courseId', 'status', 'submittedAt']) &&
+             data.keys().hasOnly(['userId', 'userEmail', 'utrId', 'courseId', 'status', 'submittedAt']) &&
+             data.userId == request.auth.uid &&
+             data.userEmail is string && isValidEmail(data.userEmail) &&
+             data.utrId is string && data.utrId.size() > 0 && data.utrId.size() <= 50 &&
+             data.courseId is string && data.courseId.size() <= 50 &&
+             data.status in ['pending', 'verified', 'rejected'] &&
+             isValidDateString(data.submittedAt);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && 
+                    (request.resource.data.role == 'user' || (request.resource.data.role == 'admin' && request.auth.token.email == "businessboy616@gmail.com" && request.auth.token.email_verified == true));
+      allow update: if isAdmin() || 
+                    (isOwner(userId) && 
+                     isValidUser(request.resource.data) && 
+                     request.resource.data.role == resource.data.role && 
+                     request.resource.data.purchasedCourses == resource.data.purchasedCourses);
+    }
+
+    match /paymentProofs/{proofId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidPaymentProof(request.resource.data) && request.resource.data.status == 'pending';
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

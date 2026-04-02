@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #90EE90; /* Light Green */
+  --color-primary-dark: #76c776;
+  --color-background: #0a0a0a;
+  --color-surface: #1a1a1a;
+  --color-surface-light: #2a2a2a;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-white font-sans antialiased;
+  }
+}
+
+.glass {
+  @apply bg-white/10 backdrop-blur-md border border-white/20;
+}
+
+.course-card {
+  @apply bg-surface rounded-2xl overflow-hidden border border-white/5 transition-all duration-300 hover:border-primary/30 hover:shadow-[0_0_20px_rgba(144,238,144,0.1)];
+}
+
